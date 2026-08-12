@@ -70,6 +70,7 @@ class RWELLEmulator
 
     // emulated values
     int id = 0;
+    uint8_t lastBand = 0;
 public:
     RWELLEmulator(std::string ip, uint16_t port);
     ~RWELLEmulator() = default;
@@ -95,6 +96,8 @@ private:
     void emulateTemperature(int celsius_0p01);
     void emulatePressure(int mbar_0p01);
     void emulateBand(uint8_t band);
+
+    double getBandFactor();
 };
 
 #endif

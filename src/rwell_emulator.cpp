@@ -167,13 +167,13 @@ void RWELLEmulator::txHandle()
     const double f18_half_life_s = 109.771 * 60;
     double t = (double)id * shortDelay_ms / 1000;
     int y_rand = (rand() % 20) - 10;
-    emulateADCValue(y0 * exp2(-t / f18_half_life_s) + y_rand);
+    emulateADCValue((y0 * exp2(-t / f18_half_life_s) + y_rand) / 1);
 
     const int t0 = 2750;
     int t_rand = (rand() % 20);
     emulateTemperature(t0  + t_rand);
 
-    const int p0 = 1005500;
+    const int p0 = 105500; 
     int p_rand = (rand() % 200);
     emulatePressure(p0  + p_rand);
 }
@@ -223,9 +223,18 @@ void RWELLEmulator::emulatePressure(int mbar_0p01)
 void RWELLEmulator::emulateBand(uint8_t band)
 {
     band &= 0b00000011;
+    this->lastBand = band;
     memcpy(
         txBuffer + map[RWELLValueCode::Band].offset,
         &band,
         map[RWELLValueCode::Band].size
     );
+}
+
+double RWELLEmulator::getBandFactor()
+{
+    if (lastBand == 0) return 1.; // high sensivity
+    if (lastBand == 1) return 10.; // medium sensivity
+    if (lastBand == 2) return 100.; // low sensivity
+    return 1;
 }

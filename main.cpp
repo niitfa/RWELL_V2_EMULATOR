@@ -6,7 +6,7 @@
 
 int main(int argc, char **argv)
 {
-	RWELLEmulator* rwell = new RWELLEmulator("127.0.0.1", 22250);
+	RWELLEmulator* rwell = new RWELLEmulator("0.0.0.0", 22250);
 	while (true) rwell->loop();
 	return 0;
 }
