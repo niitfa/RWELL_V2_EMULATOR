@@ -146,7 +146,7 @@ bool RWELLEmulator::socket_()
     setsockopt (socket_desc, SOL_SOCKET, SO_SNDTIMEO, &this->timeout, sizeof (timeout));
     if(socket_desc == -1)
     {
-        std::cout << "socket error\n";
+        //std::cout << "socket error\n";
         return false;
     }
     server.sin_family = AF_INET;
@@ -158,13 +158,13 @@ bool RWELLEmulator::socket_()
     {
         return false;
     }
-    std::cout << "bind socket to " << ip << ":" << port << std::endl;
+    //std::cout << "bind socket to " << ip << ":" << port << std::endl;
     return true;
 }
 bool RWELLEmulator::listen_()
 {
     bool l = (listen (socket_desc, 1) != -1);
-    std::cout << "listening...\n";
+   // std::cout << "listening...\n";
     return l;
 }
 void RWELLEmulator::accept_()
@@ -182,7 +182,7 @@ void RWELLEmulator::close_()
 {
     close(client_sock);
     close(socket_desc);
-    std::cout << "close socket\n";
+    //std::cout << "close socket\n";
 }
 int RWELLEmulator::send_()
 {
