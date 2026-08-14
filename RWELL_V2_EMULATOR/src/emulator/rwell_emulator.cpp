@@ -29,58 +29,128 @@ RWELLEmulator::RWELLEmulator(std::string ip, uint16_t port) : ip { ip }, port { 
     map[RWELLValueCode::Band]          = {18, 1};
 }
 
-void RWELLEmulator::loop()
+void RWELLEmulator::setMessageUpdatedCallback(std::function<void ()> &f)
+{
+     this->messageUpdatedCallback = f;
+}
+
+void RWELLEmulator::start()
+{
+    if (!is_launched.load())
+    {
+        is_initialized.store(false);
+        is_stop_forced.store(false);
+        is_launched.store(true);
+        std::thread thrd(&RWELLEmulator::handler, this);
+        thrd.detach();
+        while (!is_initialized.load()) {}
+    }
+}
+
+void RWELLEmulator::enableActivity(bool en)
+{
+    this->activityEnabled = en;
+}
+
+void RWELLEmulator::setTemperature(int temperature)
+{
+    txMutex.lock();
+    averageTemperature = temperature;
+    txMutex.unlock();
+}
+
+void RWELLEmulator::setPressure(int pressure)
+{
+    txMutex.lock();
+    averagePressure = pressure;
+    txMutex.unlock();
+}
+
+void RWELLEmulator::setVoltage(int volt)
+{
+    txMutex.lock();
+    this->voltage = volt;
+    txMutex.unlock();
+}
+
+int RWELLEmulator::getTemperature()
+{
+    return temperature;
+}
+
+int RWELLEmulator::getPressure()
+{
+    return pressure;
+}
+
+int RWELLEmulator::getVoltage()
+{
+    return voltage;
+}
+
+int RWELLEmulator::getActivity()
+{
+    return actualActivity;
+}
+
+void RWELLEmulator::handler()
 {
     int r;
     delay_ms = longDelay_ms;
-    switch(state)
+    is_initialized.store(true);
+    while (!is_stop_forced.load())
     {
-    case RWELLSocketState::INIT:
-        socket_();
-        listen_();
-        accept_();
-        state = RWELLSocketState::ESTABLISHED;
-        break;
-    case RWELLSocketState::ESTABLISHED:
-        r = receive_();
-        if(r <= 0)
+        delay_ms = longDelay_ms;
+        switch(state)
         {
-            state = RWELLSocketState::CLOSED;
-        }
-        else if(r > 0)
-        {
-            // rx handle
-            rxHandle();
-            txHandle();
-            // tx handle
-            if(send_() < 0)
+        case RWELLSocketState::INIT:
+            socket_();
+            listen_();
+            accept_();
+            state = RWELLSocketState::ESTABLISHED;
+            break;
+        case RWELLSocketState::ESTABLISHED:
+            r = receive_();
+            if(r <= 0)
             {
                 state = RWELLSocketState::CLOSED;
             }
+            else if(r > 0)
+            {
+                // rx handle
+                rxHandle();
+                txHandle();
+                // tx handle
+                if(send_() < 0)
+                {
+                    state = RWELLSocketState::CLOSED;
+                }
+            }
+            delay_ms = shortDelay_ms;
+            break;
+        case RWELLSocketState::CLOSED:
+            disconnect_();
+            close_();
+            state = RWELLSocketState::INIT;
+            break;
         }
-        delay_ms = shortDelay_ms;
-        break;
-    case RWELLSocketState::CLOSED:
-        disconnect_();
-        close_();
-        state = RWELLSocketState::INIT;
-        break;
+        updateMessage_();
+        sleep_(delay_ms);
     }
-    sleep_(delay_ms);
+    is_launched.store(false);
 }
 bool RWELLEmulator::socket_()
 {
     socket_desc = socket(AF_INET , SOCK_STREAM , 0);
-    //socket_desc = socket(AF_INET , SOCK_STREAM | SOCK_NONBLOCK , 0);
+    setsockopt (socket_desc, SOL_SOCKET, SO_RCVTIMEO, &this->timeout, sizeof (timeout));
+    setsockopt (socket_desc, SOL_SOCKET, SO_SNDTIMEO, &this->timeout, sizeof (timeout));
     if(socket_desc == -1)
     {
         std::cout << "socket error\n";
         return false;
     }
-     std::cout << "socket()\n";
-
     server.sin_family = AF_INET;
-	server.sin_addr.s_addr = INADDR_LOOPBACK; // 127.0.0.1
+    //server.sin_addr.s_addr = INADDR_LOOPBACK; // 127.0.0.1
 	server.sin_port = htons( port );
     inet_pton(AF_INET, ip.c_str(), &server.sin_addr);
 
@@ -88,44 +158,40 @@ bool RWELLEmulator::socket_()
     {
         return false;
     }
-    std::cout << "bind()\n";
+    std::cout << "bind socket to " << ip << ":" << port << std::endl;
     return true;
 }
 bool RWELLEmulator::listen_()
 {
     bool l = (listen (socket_desc, 1) != -1);
-    std::cout << "listen()\n";
+    std::cout << "listening...\n";
     return l;
 }
 void RWELLEmulator::accept_()
 {
     addr_size = sizeof(struct sockaddr_in);
-    //client_sock = accept(socket_desc, (struct sockaddr *)&client, (socklen_t*)&addr_size);
     client_sock = accept4(socket_desc, (struct sockaddr *)&client, (socklen_t*)&addr_size, SOCK_NONBLOCK);
-    std::cout << "accept()\n";
+    //std::cout << "accept()\n";
 }
 void RWELLEmulator::disconnect_()
 {
     shutdown(client_sock, SHUT_RDWR);
     shutdown(socket_desc, SHUT_RDWR);
-    std::cout << "disconnect()\n";
 }
 void RWELLEmulator::close_()
 {
     close(client_sock);
     close(socket_desc);
-    std::cout << "closed()\n";
+    std::cout << "close socket\n";
 }
 int RWELLEmulator::send_()
 {
     int res = send(client_sock, txBuffer, kTxBufferSize, 0);
-    std::cout << "send " << res << " bytes\n";
     return res;
 }
 int RWELLEmulator::receive_()
 {
     int res = recv(client_sock, rxBuffer, kRxBufferSize, 0);
-    std::cout << "receive " << res << " bytes\n";
     return res;
 }
 
@@ -134,8 +200,16 @@ void RWELLEmulator::sleep_(int ms)
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
 
+void RWELLEmulator::updateMessage_()
+{
+    txMutex.lock();
+    messageUpdatedCallback();
+    txMutex.unlock();
+}
+
 void RWELLEmulator::rxHandle()
 {
+    rxMutex.lock();
     int command = 0;
 	int parameter_1 = 0;
 	int parameter_2 = 0;
@@ -157,25 +231,40 @@ void RWELLEmulator::rxHandle()
 	default:
 		break;
 	}
+    rxMutex.unlock();
 }
 
 void RWELLEmulator::txHandle()
 {
-    increaseID();
+    txMutex.lock();
 
-    const int y0 = 3000000;
+    increaseID();
+    updateActivity(); // emulateADCValue
+    updateNoise();
+    emulateADCValue( noiseCounts + activityEnabled * activityCounts );
+    int t_rand = (rand() % 20);
+    emulateTemperature(averageTemperature  + t_rand);
+    int p_rand = (rand() % 200);
+    emulatePressure(averagePressure  + p_rand);
+    emulateHVOut(voltage);
+
+    txMutex.unlock();
+}
+
+void RWELLEmulator::updateActivity()
+{
+    const int activity0 = 3000000;
     const double f18_half_life_s = 109.771 * 60;
     double t = (double)id * shortDelay_ms / 1000;
-    int y_rand = (rand() % 20) - 10;
-    emulateADCValue((y0 * exp2(-t / f18_half_life_s) + y_rand) / 1);
+    int activityRand = (rand() % 1000) - 500;
+    activityCounts = (activity0 * exp2(-t / f18_half_life_s) + activityRand) / getBandFactor();
+}
 
-    const int t0 = 2750;
-    int t_rand = (rand() % 20);
-    emulateTemperature(t0  + t_rand);
-
-    const int p0 = 105500; 
-    int p_rand = (rand() % 200);
-    emulatePressure(p0  + p_rand);
+void RWELLEmulator::updateNoise()
+{
+    const int noiseAverage = 5000;
+    int noiseRand = (rand() % 1000) - 500;
+    noiseCounts = (noiseAverage + noiseRand) / getBandFactor();
 }
 
 void RWELLEmulator::increaseID()
@@ -189,6 +278,7 @@ void RWELLEmulator::increaseID()
 }
 void RWELLEmulator::emulateADCValue(int val)
 {
+    actualActivity = val;
     memcpy(
         txBuffer + map[RWELLValueCode::ADC_DR].offset,
         &val,
@@ -197,15 +287,16 @@ void RWELLEmulator::emulateADCValue(int val)
 }
 void RWELLEmulator::emulateHVOut(uint16_t volt)
 {
-    volt = std::min(volt, (uint16_t)500);
+    voltage = volt;
     memcpy(
         txBuffer + map[RWELLValueCode::HV_Out].offset,
-        &volt,
+        &voltage,
         map[RWELLValueCode::HV_Out].size
     );
 }
 void RWELLEmulator::emulateTemperature(int celsius_0p01)
 {
+    temperature = celsius_0p01;
     memcpy(
         txBuffer + map[RWELLValueCode::Temperature].offset,
         &celsius_0p01,
@@ -214,6 +305,7 @@ void RWELLEmulator::emulateTemperature(int celsius_0p01)
 }
 void RWELLEmulator::emulatePressure(int mbar_0p01)
 {
+    pressure = mbar_0p01;
     memcpy(
         txBuffer + map[RWELLValueCode::Pressure].offset,
         &mbar_0p01,

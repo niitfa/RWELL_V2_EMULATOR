@@ -39,8 +39,9 @@ enum RWELLSocketState
 
 class RWELLEmulator
 {
-    std::string ip;
-    uint16_t port;
+    std::string ip = "0.0.0.0";
+    uint16_t port = 22250;
+    const struct timeval timeout = { 0, 200 * 1000 };
 
     // server var
     int socket_desc;
@@ -48,6 +49,15 @@ class RWELLEmulator
 	struct sockaddr_in server;
     struct sockaddr_in client;
     int addr_size;
+
+    // thread
+    std::vector<int> cpus;
+    std::atomic<bool> is_launched{false}; // для контроля наличия активного потока
+    std::atomic<bool> is_initialized{false};  // для контроля блокировки в главном потоке в процессе инициализации
+    std::atomic<bool> is_stop_forced{false}; // для размещения в условии while и остановки при вызове stop()
+    std::mutex rxMutex, txMutex;
+
+    std::function<void(void)> messageUpdatedCallback = [](void) {};
 
     static const int kRxBufferSize = 12;
     static const int kTxBufferSize = 64;
@@ -57,7 +67,7 @@ class RWELLEmulator
     RWELLSocketState state = RWELLSocketState::CLOSED;
 
     int shortDelay_ms = 50;
-    int longDelay_ms = 200;
+    int longDelay_ms = 50;
     int delay_ms = longDelay_ms;
 
     struct ValueAddress
@@ -71,11 +81,31 @@ class RWELLEmulator
     // emulated values
     int id = 0;
     uint8_t lastBand = 0;
+    int activityCounts = 0;
+    int noiseCounts = 0;
+    int actualActivity = 0;
+    bool activityEnabled = true;
+    int averageTemperature = 2750;
+    int temperature = averageTemperature; // 100 = 1 градус
+    int averagePressure = 105500;
+    int pressure = 100000; // 10000 = 1 бар
+    int voltage = 0;
 public:
     RWELLEmulator(std::string ip, uint16_t port);
     ~RWELLEmulator() = default;
-    void loop();
+    void setMessageUpdatedCallback(std::function<void ()>&);
+    void start();
+    void enableActivity(bool en);
+    void setTemperature(int temperature);
+    void setPressure(int pressure);
+    void setVoltage(int voltage);
+
+    int getTemperature();
+    int getPressure();
+    int getVoltage();
+    int getActivity();
 private:
+    void handler();
     bool socket_();
     bool listen_();
     void accept_();
@@ -84,10 +114,14 @@ private:
     int send_();
     int receive_();
     void sleep_(int ms);
+    void updateMessage_();
 
     // msg handlers
     void rxHandle();
     void txHandle();
+
+    void updateActivity();
+    void updateNoise();
 
     // emulated values
     void increaseID();
